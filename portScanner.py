@@ -1,48 +1,66 @@
 #! /usr/bin/env python
-from socket import *
-import sys,time
-from datetime import datetime
+#script for scanning tcp ports
+#this program takes cmd line args
+#define methods in camelCase, variables in snake_case
+import optparse #required for cmd line arg passing
+import socket
+from socket import*
+from threading import*
+screenLock= Semaphore(value=1) #for controlling the printing of diff threads
 
-host='' #string
-portList=[20,21,22,23,24,25,53,80,110,344,443] #ports to b searched
-#supply aditional ports as necessary
-def scanHost(host,port,r_code=1):
+def connScan(target_host,target_port):
     try:
-        s=socket(AF_INET,SOCK_STREAM)
-        code = s.connect_ex((host,port))
+        connSkt=socket(AF_INET,SOCK_STREAM) #tcp
+        connSkt.connect((target_host,target_port))
+        connSkt.send("GarbageData\r\n") #for banner grabing
+        results=connSkt.recv(100)
+        screenLock.acquire()
+        print ("[*] %d/tcp !!! open !!!" %target_port)
+        print ("[^] "+ str(results))
 
-        if code== 0:
-            r_code=code
-        s.close()
-    except Exception, e:
-        pass
-    return r_code
+    except:
+        screenLock.acquire()
+        print("[#] %d/tcp closed" % target_port)
+
+    finally:
+        screenLock.release()
+        connSkt.close()
+
+def portScan(target_host,target_ports):
+
+    try:
+        target_ip=gethostbyname(target_host)
+    except:
+        print("[-] Cannot resolve '%s': Unknown host" % target_host)
+        return
+
+    try:
+        target_name=gethostbyip(target_ip)
+        print("\n[+] Scan results for: "+target_name[0])
+    except:
+        print ("\n[+] Scan results for: "+ target_ip)
+    setdefaulttimeout(1)
+
+    for target_port in target_ports: #call connScan with threading
+        t= Thread(target=connScan, args=(target_host,int(target_port)))
+        t.start()
+
 def main():
+    parser=optparse.OptionParser('usage %prog -H'+\
+        '<target host> -p <target port>')
+    parser.add_option('-H', dest='target_host', type='string',\
+        help='specify target host')
+    parser.add_option('-p', dest='target_port', type='string',\
 
-    try:
-        host=raw_input("[+] Enter Host Address: ")
-    except KeyboardInterrupt:
-        print("\n\n[*] User requested to Interrupt.")
-        print("[*] Application shutting Down.")
-        sys.exit(1)
+        help='specify target port[s] separated by comma')
+    (options,args)= parser.parse_args()
+    target_host= options.target_host
+    target_ports= str(options.target_port).split(',')
 
-    host_ip = gethostbyname(host) #get host's ip
+    if (target_host==None) | (target_ports[0]==None):
+        print ("[-] You must specify target Host and Port[s]")
+        exit(0)
 
-    print ("\n[+] Host: %s IP: %s" % (host,host_ip))
-    print ("[*] Scan started at %s...\n" % (time.strftime("%H:%M:%S")))
-    start_time=datetime.now()
-
-    for port in portList:
-        try:
-            response= scanHost(host,port)
-            if response==0:
-                print("[+] Port %d: Open" %(port))
-        except Exception, e:
-            pass
-    stop_time=datetime.now()
-    time_duration=stop_time- start_time
-    print("\n[*] Scanning finished at %s..." % (time.strftime("%H:%M:%S")))
-    print("[*] Scanning duration: %s..."% (time_duration))
-
+    portScan(target_host,target_ports)
 if __name__=='__main__':
     main()
